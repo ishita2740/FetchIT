@@ -1,0 +1,60 @@
+import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/lib/auth/server";
+import {
+  getUserProfileByAuthId,
+  getCollectionById,
+  getCollectionResult,
+  getCollectionSources,
+  getWorkflowPlan,
+} from "@/lib/db";
+
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { data: session } = await auth.getSession();
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    const profile = await getUserProfileByAuthId(session.user.id);
+    if (!profile) {
+      return NextResponse.json({ error: "User profile not found" }, { status: 404 });
+    }
+
+    const { id } = await context.params;
+    const collection = await getCollectionById(id);
+    if (!collection) {
+      return NextResponse.json({ error: "Collection not found" }, { status: 404 });
+    }
+
+    if (collection.user_profile_id !== profile.id) {
+      return NextResponse.json(
+        { error: "Forbidden: You do not own this collection" },
+        { status: 403 }
+      );
+    }
+
+    const collectionResult = await getCollectionResult(id);
+    const sources = await getCollectionSources(id);
+    const workflowPlan = await getWorkflowPlan(id);
+
+    return NextResponse.json({
+      collection,
+      result: collectionResult,
+      understood_requirement: collectionResult?.understood_requirement ?? null,
+      processing_summary: collectionResult?.processing_summary ?? null,
+      result_data: collectionResult?.result_data ?? null,
+      final_answer: collectionResult?.final_answer ?? null,
+      sources,
+      workflow: workflowPlan?.plan ?? null,
+    });
+  } catch (error) {
+    console.error("Error fetching collection result:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch collection result" },
+      { status: 500 }
+    );
+  }
+}
