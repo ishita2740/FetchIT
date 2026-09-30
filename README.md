@@ -3,7 +3,6 @@
 <img src="docs/logo (2).png" alt="FetchIT logo" width="120" />
 
 # FetchIT - **Making data easier to get.**
-
 **AI-powered data intelligence platform**. 
 
 Ask for data in any language — through text, voice, images, or video. FetchIT collects, cleans, validates, and delivers a source-backed dataset ready to use.
@@ -21,16 +20,17 @@ Ask for data in any language — through text, voice, images, or video. FetchIT 
 
 ## Table of Contents
 
-1. [The Problem](#the-problem)
-2. [The Solution](#the-solution)
-3. [Key Features](#key-features)
-4. [Tech Stack](#tech-stack)
-5. [System Architecture](#system-architecture)
-6. [Folder Structure](#folder-structure)
-7. [Getting Started](#getting-started)
-8. [Git Workflow](#git-workflow)
-9. [Deployment](#deployment)
-10. [License](#license)
+1. [Overview](#overview)
+2. [The Problem](#the-problem)
+3. [The Solution](#the-solution)
+4. [Key Features](#key-features)
+5. [Tech Stack](#tech-stack)
+6. [System Architecture](#system-architecture)
+7. [Folder Structure](#folder-structure)
+8. [Getting Started](#getting-started)
+9. [Git Workflow](#git-workflow)
+10. [Deployment](#deployment)
+11. [License](#license)
 
 ---
 
@@ -222,6 +222,8 @@ A clean interface built with Tailwind CSS and shadcn/ui keeps the workflow simpl
 | **Development**     | [v0](https://v0.app)                                               |
 | **Deployment**      | [Vercel](https://vercel.com)                                       |
 
+--- 
+
 ## System Architecture
  
 <p align="center">
@@ -229,6 +231,8 @@ A clean interface built with Tailwind CSS and shadcn/ui keeps the workflow simpl
 </p>
  
 </details>
+
+ ---
  
 **How a request flows**
  
@@ -240,6 +244,8 @@ A clean interface built with Tailwind CSS and shadcn/ui keeps the workflow simpl
 6. **Attribution and storage:** accepted records are stored in Neon along with their provenance.
 7. **Workflow tracking and history:** every step updates job state and is saved to history, and notifications fire on completion or failure. Finished datasets can be exported to PDF.
 <!-- VERIFY: adjust the stages, sources, and LLM/search provider above to match lib/ and app/api/ in your code. -->
+
+---
 
 ## Folder Structure
 
@@ -398,6 +404,8 @@ FetchIT is designed for deployment with **Vercel** and **Neon**.
 4. Deploy the application.
 
 Once configured, changes merged into `main` can trigger automatic deployments.
+
+---
 
 ## License
 
