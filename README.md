@@ -277,6 +277,8 @@ FetchIT/
 
 ```
 
+---
+
 ## Getting Started
 
 ### Prerequisites
