@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/logo.png" alt="FetchIT logo" width="120" />
+<img src="docs/logo (2).png" alt="FetchIT logo" width="120" />
 
 # FetchIT - **Making data easier to get.**
 
