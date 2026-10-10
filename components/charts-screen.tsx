@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { useLanguage } from '@/lib/i18n'
+import { apiFetch } from '@/lib/api-fetch'
 
 export interface SavedChartItem {
   id: string
@@ -42,7 +43,7 @@ export function ChartsScreen({ onClose, onOpenCollection }: ChartsScreenProps) {
   async function loadCharts() {
     setLoading(true)
     try {
-      const res = await fetch('/api/saved-charts')
+      const res = await apiFetch('/api/saved-charts')
       if (res.ok) {
         const data = await res.json()
         setCharts(data.charts || [])
@@ -58,7 +59,7 @@ export function ChartsScreen({ onClose, onOpenCollection }: ChartsScreenProps) {
     if (!confirm('Are you sure you want to remove this chart?')) return
     setDeletingId(id)
     try {
-      const res = await fetch(`/api/saved-charts?id=${id}`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/saved-charts?id=${id}`, { method: 'DELETE' })
       if (res.ok) {
         setCharts(prev => prev.filter(c => c.id !== id))
       }

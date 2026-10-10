@@ -33,8 +33,8 @@ export async function POST(
     const result = await getCollectionResult(id);
     const resultDataObj = (result?.result_data as any) ?? {};
     const records: Record<string, any>[] = resultDataObj.records ?? [];
-    const fields: string[] = result?.result_data?.fields ?? [];
-    const summary = result?.result_data?.summary ?? {};
+    const fields: string[] = resultDataObj.fields ?? [];
+    const summary = resultDataObj.summary ?? {};
 
     // Build PDF
     const pdfDoc = await PDFDocument.create();
