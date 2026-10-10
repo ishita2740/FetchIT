@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { getSessionUser } from "@/lib/auth/get-session";
 import {
   getUserProfileByAuthId,
   getCollectionById,
@@ -21,12 +22,12 @@ export async function POST(
 ) {
   let collectionId: string | null = null;
   try {
-    const { data: session } = await auth.getSession();
-    if (!session?.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const profile = await getUserProfileByAuthId(session.user.id);
+    const profile = await getUserProfileByAuthId(sessionUser.id);
     if (!profile) {
       return NextResponse.json({ error: "User profile not found" }, { status: 404 });
     }
@@ -100,6 +101,7 @@ export async function POST(
       success: true,
       collection: updatedCollection,
       sources: savedSources,
+      provider_used: discoveryProvider.name,
     });
   } catch (error: unknown) {
     console.error("Source Discovery Error:", error);

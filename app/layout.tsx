@@ -40,6 +40,8 @@ export const viewport: Viewport = {
   ],
 }
 
+import { LanguageProvider } from '@/lib/i18n'
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -48,7 +50,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${fredoka.variable} antialiased`}>
-        {children}
+        <LanguageProvider>
+          {children}
+        </LanguageProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>
     </html>

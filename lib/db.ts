@@ -13,6 +13,7 @@ export type UserProfile = {
   phone: string | null;
   age: number | null;
   gender: string | null;
+  language?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -35,7 +36,15 @@ export async function getUserProfileByAuthId(authUserId: string): Promise<UserPr
     WHERE auth_user_id = ${authUserId}
     LIMIT 1
   `;
-  return (rows[0] as UserProfile) || null;
+  if (rows[0]) return rows[0] as UserProfile;
+
+  // Auto-provision empty profile if not found yet
+  try {
+    const created = await upsertUserProfile({ auth_user_id: authUserId });
+    return created;
+  } catch {
+    return null;
+  }
 }
 
 export async function upsertUserProfile(profile: {
@@ -45,10 +54,11 @@ export async function upsertUserProfile(profile: {
   phone?: string | null;
   age?: number | null;
   gender?: string | null;
+  language?: string | null;
 }): Promise<UserProfile> {
   const sql = getDb();
   const rows = await sql`
-    INSERT INTO user_profiles (auth_user_id, name, email, phone, age, gender, updated_at)
+    INSERT INTO user_profiles (auth_user_id, name, email, phone, age, gender, language, updated_at)
     VALUES (
       ${profile.auth_user_id},
       ${profile.name ?? null},
@@ -56,6 +66,7 @@ export async function upsertUserProfile(profile: {
       ${profile.phone ?? null},
       ${profile.age ?? null},
       ${profile.gender ?? null},
+      ${profile.language ?? 'en'},
       NOW()
     )
     ON CONFLICT (auth_user_id)
@@ -65,6 +76,7 @@ export async function upsertUserProfile(profile: {
       phone = COALESCE(EXCLUDED.phone, user_profiles.phone),
       age = COALESCE(EXCLUDED.age, user_profiles.age),
       gender = COALESCE(EXCLUDED.gender, user_profiles.gender),
+      language = COALESCE(EXCLUDED.language, user_profiles.language),
       updated_at = NOW()
     RETURNING *
   `;
@@ -462,4 +474,207 @@ export async function updateCollectionSourceStatus(
   `;
 }
 
+// ─── UPLOADED FILES ──────────────────────────────────────────────
 
+export type UploadedFile = {
+  id: string;
+  user_profile_id: string;
+  collection_id: string | null;
+  original_name: string;
+  mime_type: string;
+  file_size: number;
+  file_extension: string | null;
+  storage_key: string;
+  extracted_text: string | null;
+  status: 'uploaded' | 'processing' | 'processed' | 'failed';
+  created_at: string;
+  updated_at: string;
+};
+
+export async function saveUploadedFile(params: {
+  user_profile_id: string;
+  collection_id?: string | null;
+  original_name: string;
+  mime_type: string;
+  file_size: number;
+  file_extension?: string | null;
+  storage_key: string;
+  extracted_text?: string | null;
+  status?: string;
+}): Promise<UploadedFile> {
+  const sql = getDb();
+  const rows = await sql`
+    INSERT INTO uploaded_files (
+      user_profile_id, collection_id, original_name, mime_type,
+      file_size, file_extension, storage_key, extracted_text, status
+    ) VALUES (
+      ${params.user_profile_id},
+      ${params.collection_id ?? null},
+      ${params.original_name},
+      ${params.mime_type},
+      ${params.file_size},
+      ${params.file_extension ?? null},
+      ${params.storage_key},
+      ${params.extracted_text ?? null},
+      ${params.status ?? 'uploaded'}
+    )
+    RETURNING *
+  `;
+  return rows[0] as UploadedFile;
+}
+
+export async function getUploadedFile(fileId: string): Promise<UploadedFile | null> {
+  const sql = getDb();
+  const rows = await sql`SELECT * FROM uploaded_files WHERE id = ${fileId} LIMIT 1`;
+  return (rows[0] as UploadedFile) || null;
+}
+
+export async function getUserUploadedFiles(userProfileId: string): Promise<UploadedFile[]> {
+  const sql = getDb();
+  const rows = await sql`
+    SELECT * FROM uploaded_files WHERE user_profile_id = ${userProfileId} ORDER BY created_at DESC
+  `;
+  return rows as UploadedFile[];
+}
+
+export async function updateUploadedFileExtractedText(
+  fileId: string,
+  extractedText: string,
+  status: string = 'processed'
+): Promise<void> {
+  const sql = getDb();
+  await sql`
+    UPDATE uploaded_files SET extracted_text = ${extractedText}, status = ${status}, updated_at = NOW()
+    WHERE id = ${fileId}
+  `;
+}
+
+// ─── SAVED CHARTS ────────────────────────────────────────────────
+
+export type SavedChart = {
+  id: string;
+  user_profile_id: string;
+  collection_id: string | null;
+  collection_title?: string | null;
+  chart_type: string;
+  title: string;
+  config: Record<string, any>;
+  insight_text: string | null;
+  created_at: string;
+};
+
+export async function saveChart(params: {
+  user_profile_id: string;
+  collection_id?: string | null;
+  chart_type: string;
+  title: string;
+  config: Record<string, any>;
+  insight_text?: string | null;
+}): Promise<SavedChart> {
+  const sql = getDb();
+  const configJson = JSON.stringify(params.config);
+  const rows = await sql`
+    INSERT INTO saved_charts (user_profile_id, collection_id, chart_type, title, config, insight_text)
+    VALUES (
+      ${params.user_profile_id}, ${params.collection_id ?? null}, ${params.chart_type},
+      ${params.title}, ${configJson}::jsonb, ${params.insight_text ?? null}
+    )
+    RETURNING *
+  `;
+  return rows[0] as SavedChart;
+}
+
+export async function getUserSavedCharts(userProfileId: string): Promise<SavedChart[]> {
+  const sql = getDb();
+  const rows = await sql`
+    SELECT sc.*, c.title as collection_title FROM saved_charts sc
+    LEFT JOIN collections c ON sc.collection_id = c.id
+    WHERE sc.user_profile_id = ${userProfileId} ORDER BY sc.created_at DESC
+  `;
+  return rows as SavedChart[];
+}
+
+export async function deleteSavedChart(chartId: string, userProfileId: string): Promise<void> {
+  const sql = getDb();
+  await sql`DELETE FROM saved_charts WHERE id = ${chartId} AND user_profile_id = ${userProfileId}`;
+}
+
+// ─── FEEDBACK ────────────────────────────────────────────────────
+
+export async function saveFeedback(params: {
+  user_profile_id?: string | null;
+  category: string;
+  message: string;
+  page_context?: string | null;
+}): Promise<{ id: string }> {
+  const sql = getDb();
+  const rows = await sql`
+    INSERT INTO feedback (user_profile_id, category, message, page_context)
+    VALUES (${params.user_profile_id ?? null}, ${params.category}, ${params.message}, ${params.page_context ?? null})
+    RETURNING id
+  `;
+  return rows[0] as { id: string };
+}
+
+// ─── SAVED DOCUMENTS (EXTENDED) ──────────────────────────────────
+
+export type SavedDocument = {
+  id: string;
+  user_profile_id: string;
+  collection_id: string | null;
+  collection_title?: string | null;
+  file_name: string;
+  file_type: string | null;
+  file_url: string | null;
+  extracted_text: string | null;
+  document_type: string | null;
+  file_size: number | null;
+  created_at: string;
+};
+
+export async function saveDocument(params: {
+  user_profile_id: string;
+  collection_id?: string | null;
+  file_name: string;
+  file_type?: string | null;
+  file_url?: string | null;
+  extracted_text?: string | null;
+  document_type?: string;
+  file_size?: number | null;
+}): Promise<SavedDocument> {
+  const sql = getDb();
+  const rows = await sql`
+    INSERT INTO saved_documents (
+      user_profile_id, collection_id, file_name, file_type,
+      file_url, extracted_text, document_type, file_size
+    ) VALUES (
+      ${params.user_profile_id}, ${params.collection_id ?? null}, ${params.file_name},
+      ${params.file_type ?? null}, ${params.file_url ?? null}, ${params.extracted_text ?? null},
+      ${params.document_type ?? 'uploaded'}, ${params.file_size ?? null}
+    )
+    RETURNING *
+  `;
+  return rows[0] as SavedDocument;
+}
+
+export async function getUserSavedDocumentsExtended(userProfileId: string): Promise<SavedDocument[]> {
+  const sql = getDb();
+  const rows = await sql`
+    SELECT sd.*, c.title as collection_title FROM saved_documents sd
+    LEFT JOIN collections c ON sd.collection_id = c.id
+    WHERE sd.user_profile_id = ${userProfileId} ORDER BY sd.created_at DESC
+  `;
+  return rows as SavedDocument[];
+}
+
+export async function deleteSavedDocument(docId: string, userProfileId: string): Promise<void> {
+  const sql = getDb();
+  await sql`DELETE FROM saved_documents WHERE id = ${docId} AND user_profile_id = ${userProfileId}`;
+}
+
+// ─── USER LANGUAGE ───────────────────────────────────────────────
+
+export async function updateUserLanguage(authUserId: string, language: string): Promise<void> {
+  const sql = getDb();
+  await sql`UPDATE user_profiles SET language = ${language}, updated_at = NOW() WHERE auth_user_id = ${authUserId}`;
+}

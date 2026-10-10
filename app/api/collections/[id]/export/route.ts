@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { getSessionUser } from "@/lib/auth/get-session";
 import {
   getUserProfileByAuthId,
   getCollectionById,
@@ -137,12 +138,12 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { data: session } = await auth.getSession();
-    if (!session?.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const profile = await getUserProfileByAuthId(session.user.id);
+    const profile = await getUserProfileByAuthId(sessionUser.id);
     if (!profile) {
       return NextResponse.json({ error: "User profile not found" }, { status: 404 });
     }
@@ -185,27 +186,7 @@ export async function GET(
     }
 
     if (format === "pdf") {
-      const date = new Intl.DateTimeFormat("en", {
-        dateStyle: "long",
-        timeStyle: "short",
-      }).format(new Date(collection.created_at || Date.now()));
-
-      const html = buildPDFHtml({
-        originalInput: collection.original_input,
-        understoodRequirement: collectionResult?.understood_requirement || null,
-        records,
-        fields: exportFields,
-        sources,
-        processingSummary,
-        collectionDate: date,
-      });
-
-      return new NextResponse(html, {
-        headers: {
-          "Content-Type": "text/html; charset=utf-8",
-          "Content-Disposition": `inline; filename="fetchit-${id.slice(0, 8)}.html"`,
-        },
-      });
+      return NextResponse.redirect(new URL(`/api/collections/${id}/export-pdf`, request.url));
     }
 
     return NextResponse.json({ error: "Unsupported format" }, { status: 400 });

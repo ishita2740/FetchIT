@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { getSessionUser } from "@/lib/auth/get-session";
 import { getUserProfileByAuthId, getUserSavedDocuments } from "@/lib/db";
 
 export async function GET() {
   try {
-    const { data: session } = await auth.getSession();
-    if (!session?.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const profile = await getUserProfileByAuthId(session.user.id);
+    const profile = await getUserProfileByAuthId(sessionUser.id);
     if (!profile) {
       return NextResponse.json({ documents: [] });
     }

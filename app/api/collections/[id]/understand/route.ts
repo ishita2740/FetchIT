@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { getSessionUser } from "@/lib/auth/get-session";
 import {
   getUserProfileByAuthId,
   getUserPreferences,
@@ -21,13 +22,13 @@ export async function POST(
   let collectionId: string | null = null;
   try {
     // 1. Verify Neon Auth session
-    const { data: session } = await auth.getSession();
-    if (!session?.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
     // 2. Resolve user profile
-    const profile = await getUserProfileByAuthId(session.user.id);
+    const profile = await getUserProfileByAuthId(sessionUser.id);
     if (!profile) {
       return NextResponse.json({ error: "User profile not found" }, { status: 404 });
     }
@@ -137,12 +138,12 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { data: session } = await auth.getSession();
-    if (!session?.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const profile = await getUserProfileByAuthId(session.user.id);
+    const profile = await getUserProfileByAuthId(sessionUser.id);
     if (!profile) {
       return NextResponse.json({ error: "User profile not found" }, { status: 404 });
     }

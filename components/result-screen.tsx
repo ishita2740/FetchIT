@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { apiFetch } from '@/lib/api-fetch'
 
 interface ResultScreenProps {
   collection: {
@@ -82,7 +83,7 @@ async function exportCSV(collectionId: string) {
 }
 
 function exportPDF(collectionId: string) {
-  window.open(`/api/collections/${collectionId}/export?format=pdf`, '_blank')
+  window.open(`/api/collections/${collectionId}/export-pdf`, '_blank')
 }
 
 // ─── SOURCE MODAL ────────────────────────────────────────────────────────────
@@ -92,15 +93,74 @@ function SourceModal({ source, onClose }: { source: any; onClose: () => void }) 
     <div className="rs-modal-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-label="Source details">
       <div className="rs-modal" onClick={e => e.stopPropagation()}>
         <div className="rs-modal-header">
-          <h3>Source details</h3>
+          <h3>Source & Evidence Verification</h3>
           <button onClick={onClose} aria-label="Close" className="rs-modal-close">✕</button>
         </div>
         <dl className="rs-modal-dl">
-          {source.source_name && <><dt>Name</dt><dd>{source.source_name}</dd></>}
-          {source.source_url && <><dt>URL</dt><dd><a href={source.source_url} target="_blank" rel="noopener noreferrer" className="rs-link">{source.source_url}</a></dd></>}
-          {source.source_type && <><dt>Type</dt><dd>{source.source_type.replace(/_/g, ' ')}</dd></>}
-          {source.status && <><dt>Status</dt><dd>{source.status === 'failed' ? 'Could not be accessed' : source.status}</dd></>}
-          {source.relevance && <><dt>Relevance</dt><dd>{source.relevance}</dd></>}
+          {source.source_name && (
+            <>
+              <dt>Source Name</dt>
+              <dd><strong>{source.source_name}</strong></dd>
+            </>
+          )}
+          {source.source_url && (
+            <>
+              <dt>Direct Source URL</dt>
+              <dd>
+                <a href={source.source_url} target="_blank" rel="noopener noreferrer" className="rs-link">
+                  {source.source_url} ↗
+                </a>
+              </dd>
+            </>
+          )}
+          {source.provider && (
+            <>
+              <dt>Search Engine / Discovery</dt>
+              <dd>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, color: '#0f766e', background: '#ccfbf1', padding: '2px 8px', borderRadius: 4, fontSize: 11 }}>
+                  🔍 {source.provider}
+                </span>
+              </dd>
+            </>
+          )}
+          {source._verification_status && (
+            <>
+              <dt>Verification Status</dt>
+              <dd>
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 4,
+                  fontWeight: 600,
+                  fontSize: 11,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  background: source._verification_status === 'source_supported' ? '#dcfce7' : '#fef9c3',
+                  color: source._verification_status === 'source_supported' ? '#166534' : '#854d0e',
+                }}>
+                  {source._verification_status === 'source_supported' ? '✓ Source-Supported' : source._verification_status}
+                </span>
+              </dd>
+            </>
+          )}
+          {source._evidence && (
+            <>
+              <dt>Supporting Evidence Quote</dt>
+              <dd style={{ fontStyle: 'italic', background: '#f8fafc', padding: 8, borderRadius: 6, border: '1px solid #e2e8f0', color: '#1e293b' }}>
+                “{source._evidence}”
+              </dd>
+            </>
+          )}
+          {source.source_type && <><dt>Domain Type</dt><dd>{source.source_type.replace(/_/g, ' ')}</dd></>}
+          {source.status && <><dt>Accessibility</dt><dd>{source.status === 'failed' ? 'Inaccessible' : source.status}</dd></>}
+          {source.snippet && !source._evidence && <><dt>Search Snippet</dt><dd>{source.snippet}</dd></>}
+          {source.relevance && <><dt>Relevance Note</dt><dd>{source.relevance}</dd></>}
+          {source._collected_at && (
+            <>
+              <dt>Collected At</dt>
+              <dd style={{ fontSize: 11, color: '#64748b' }}>{formatDate(source._collected_at)}</dd>
+            </>
+          )}
         </dl>
       </div>
     </div>
@@ -151,7 +211,11 @@ function ResultTable({
     }
     // validation filter
     if (filterValidation !== 'all') {
-      rows = rows.filter(r => r._validation === filterValidation)
+      if (filterValidation === 'source_supported') {
+        rows = rows.filter(r => r._verification_status === 'source_supported')
+      } else {
+        rows = rows.filter(r => r._validation === filterValidation)
+      }
     }
     // source filter
     if (filterSource !== 'all') {
@@ -175,7 +239,13 @@ function ResultTable({
 
   function findSource(record: any) {
     const url = record._source_url
-    return sources.find(s => s.source_url === url) || { source_url: url, source_name: record._source_name }
+    const matched = sources.find(s => s.source_url === url) || { source_url: url, source_name: record._source_name }
+    return {
+      ...matched,
+      _evidence: record._evidence,
+      _verification_status: record._verification_status,
+      _collected_at: record._collected_at,
+    }
   }
 
   return (
@@ -196,6 +266,7 @@ function ResultTable({
         <div className="rs-filters">
           <select className="rs-filter-select" value={filterValidation} onChange={e => setFilterValidation(e.target.value)} aria-label="Filter by quality">
             <option value="all">All records</option>
+            <option value="source_supported">Source-supported only</option>
             <option value="valid">Complete only</option>
             <option value="incomplete">Incomplete only</option>
           </select>
@@ -225,7 +296,7 @@ function ResultTable({
                     </span>
                   </th>
                 ))}
-                <th className="rs-th rs-th-source" scope="col">Source</th>
+                <th className="rs-th rs-th-source" scope="col">Source & Evidence</th>
               </tr>
             </thead>
             <tbody>
@@ -237,14 +308,21 @@ function ResultTable({
                     <td key={col} className="rs-td">{cellValue(record[col])}</td>
                   ))}
                   <td className="rs-td rs-td-source">
-                    <button
-                      className="rs-source-btn"
-                      onClick={() => setSelectedSource(findSource(record))}
-                      title={record._source_name || record._source_url}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                      {(record._source_name || record._source_url || '').slice(0, 22)}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button
+                        className="rs-source-btn"
+                        onClick={() => setSelectedSource(findSource(record))}
+                        title={record._source_name || record._source_url}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><polyline points="15,3 21,3 21,9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                        {(record._source_name || record._source_url || '').slice(0, 20)}
+                      </button>
+                      {record._verification_status === 'source_supported' && (
+                        <span style={{ fontSize: 10, background: '#dcfce7', color: '#166534', padding: '1px 5px', borderRadius: 3, fontWeight: 700 }} title="Backed by direct source evidence quote">
+                          ✓
+                        </span>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -409,11 +487,13 @@ export function ResultScreen({
   onNewCollection,
   onRunAgain,
 }: ResultScreenProps) {
-  const [activeTab, setActiveTab] = useState<'results' | 'workflow' | 'sources'>(initialTab)
+  const [activeTab, setActiveTab] = useState<'results' | 'workflow' | 'sources' | 'charts'>(initialTab)
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('table')
   const [exportOpen, setExportOpen] = useState(false)
   const [exportLoading, setExportLoading] = useState<string | null>(null)
   const [selectedSource, setSelectedSource] = useState<any | null>(null)
+  const [savedDocStatus, setSavedDocStatus] = useState<string | null>(null)
+  const [savedChartsMap, setSavedChartsMap] = useState<Record<string, boolean>>({})
 
   const resultData = result?.result_data as any
   const outputType = resultData?.output_type || 'structured_dataset'
@@ -426,6 +506,24 @@ export function ResultScreen({
   const personMsg = buildPersonalizationMessage(preferences)
   const understoodReq = result?.understood_requirement || null
 
+  const sourceDistributionData = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const r of finalRecords) {
+      const src = r._source_name || r._source_url || 'Web Discovery'
+      counts[src] = (counts[src] || 0) + 1
+    }
+    return Object.entries(counts).map(([label, value]) => ({ label, value }))
+  }, [finalRecords])
+
+  const fieldCompletenessData = useMemo(() => {
+    if (finalRecords.length === 0 || displayColumns.length === 0) return []
+    return displayColumns.slice(0, 6).map(col => {
+      const populated = finalRecords.filter(r => r[col] !== null && r[col] !== undefined && r[col] !== '').length
+      const pct = Math.round((populated / finalRecords.length) * 100)
+      return { label: humanizeKey(col), value: pct }
+    })
+  }, [finalRecords, displayColumns])
+
   async function handleExport(format: 'csv' | 'pdf') {
     setExportLoading(format)
     try {
@@ -434,6 +532,56 @@ export function ResultScreen({
     } finally {
       setExportLoading(null)
       setExportOpen(false)
+    }
+  }
+
+  async function handleSaveDocument() {
+    setSavedDocStatus('saving')
+    try {
+      const res = await apiFetch('/api/saved-documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collection_id: collection.id,
+          file_name: `${(collection.original_input || 'Report').slice(0, 30)}.pdf`,
+          file_type: 'application/pdf',
+          document_type: 'report',
+          extracted_text: understoodReq || collection.original_input,
+        }),
+      })
+      if (res.ok) {
+        setSavedDocStatus('saved')
+        setTimeout(() => setSavedDocStatus(null), 3000)
+      } else {
+        setSavedDocStatus(null)
+        alert('Failed to save document.')
+      }
+    } catch {
+      setSavedDocStatus(null)
+      alert('Error saving document.')
+    }
+  }
+
+  async function saveCurrentChart(key: string, title: string, data: any[], insight?: string) {
+    try {
+      const res = await apiFetch('/api/saved-charts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collection_id: collection.id,
+          chart_type: key === 'insight' ? 'insight' : 'bar',
+          title,
+          config: { data },
+          insight_text: insight || null,
+        }),
+      })
+      if (res.ok) {
+        setSavedChartsMap(prev => ({ ...prev, [key]: true }))
+      } else {
+        alert('Failed to save chart.')
+      }
+    } catch {
+      alert('Error saving chart.')
     }
   }
 
@@ -472,6 +620,16 @@ export function ResultScreen({
             )}
           </div>
 
+          {/* Save Document */}
+          <button
+            className="rs-btn rs-btn--ghost"
+            onClick={handleSaveDocument}
+            disabled={savedDocStatus === 'saving'}
+            title="Save this report to Saved Documents"
+          >
+            {savedDocStatus === 'saving' ? 'Saving…' : savedDocStatus === 'saved' ? '✓ Saved to Docs' : '💾 Save to Docs'}
+          </button>
+
           {onRunAgain && (
             <button className="rs-btn rs-btn--ghost" onClick={onRunAgain} title="Run again as new collection">
               Run again
@@ -505,6 +663,13 @@ export function ResultScreen({
             onClick={() => setActiveTab('results')}
           >
             📊 Results & Dataset ({finalRecords.length})
+          </button>
+          <button
+            type="button"
+            className={`rs-dash-tab ${activeTab === 'charts' ? 'active' : ''}`}
+            onClick={() => setActiveTab('charts')}
+          >
+            📈 Charts & Visuals
           </button>
           <button
             type="button"
@@ -621,6 +786,107 @@ export function ResultScreen({
               )}
             </section>
           </>
+        )}
+
+        {/* ── TAB: CHARTS & VISUALS ── */}
+        {activeTab === 'charts' && (
+          <section className="rs-section" aria-label="Visual Analytics & Charts">
+            <h2 className="rs-section-label">Interactive Visualizations & Metrics</h2>
+            <p className="rs-how">
+              Auto-generated data charts from this collection. You can save any chart or insight to your Charts & Insights dashboard.
+            </p>
+
+            <div className="charts-grid" style={{ marginTop: 16 }}>
+              {/* Chart 1: Source Distribution */}
+              <div className="chart-card">
+                <div className="chart-card-top">
+                  <h4 className="chart-card-title">Source Record Distribution</h4>
+                  <button
+                    className="sub-btn sub-btn--ghost"
+                    onClick={() => saveCurrentChart('source_dist', 'Source Record Distribution', sourceDistributionData)}
+                  >
+                    {savedChartsMap['source_dist'] ? '✓ Saved' : '+ Save Chart'}
+                  </button>
+                </div>
+                <div className="chart-visual-box">
+                  {sourceDistributionData.length > 0 ? (
+                    <div className="bar-chart-container">
+                      {sourceDistributionData.map((d, i) => {
+                        const maxV = Math.max(...sourceDistributionData.map(x => x.value), 1)
+                        const pct = Math.round((d.value / maxV) * 100)
+                        return (
+                          <div key={i} className="bar-chart-row">
+                            <div className="bar-label-group">
+                              <span className="bar-label">{d.label}</span>
+                              <span className="bar-value">{d.value}</span>
+                            </div>
+                            <div className="bar-track">
+                              <div className="bar-fill" style={{ width: `${pct}%`, background: '#176b61' }} />
+                            </div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <p className="rs-empty">No source data available.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Chart 2: Data Quality & Completeness */}
+              <div className="chart-card">
+                <div className="chart-card-top">
+                  <h4 className="chart-card-title">Field Completeness & Quality</h4>
+                  <button
+                    className="sub-btn sub-btn--ghost"
+                    onClick={() => saveCurrentChart('field_comp', 'Field Completeness & Quality', fieldCompletenessData)}
+                  >
+                    {savedChartsMap['field_comp'] ? '✓ Saved' : '+ Save Chart'}
+                  </button>
+                </div>
+                <div className="chart-visual-box">
+                  {fieldCompletenessData.length > 0 ? (
+                    <div className="bar-chart-container">
+                      {fieldCompletenessData.map((d, i) => (
+                        <div key={i} className="bar-chart-row">
+                          <div className="bar-label-group">
+                            <span className="bar-label">{d.label}</span>
+                            <span className="bar-value">{d.value}%</span>
+                          </div>
+                          <div className="bar-track">
+                            <div className="bar-fill" style={{ width: `${d.value}%`, background: '#258675' }} />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="rs-empty">No fields data available.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Insight Card */}
+              {(understoodReq || processingSummary) && (
+                <div className="chart-card" style={{ gridColumn: '1 / -1' }}>
+                  <div className="chart-card-top">
+                    <h4 className="chart-card-title">Key Intelligence Summary</h4>
+                    <button
+                      className="sub-btn sub-btn--ghost"
+                      onClick={() => saveCurrentChart('insight', 'Key Intelligence Summary', [], understoodReq || 'Summary')}
+                    >
+                      {savedChartsMap['insight'] ? '✓ Saved' : '+ Save Insight'}
+                    </button>
+                  </div>
+                  <div className="chart-visual-box">
+                    <div className="chart-insight-box">
+                      <span className="chart-insight-sparkle">✦ Overview</span>
+                      <p>{understoodReq || 'Collection processed and verified successfully.'}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
         )}
 
         {/* ── TAB 2: WORKFLOW INSPECTION ── */}

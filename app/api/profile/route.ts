@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { getSessionUser } from "@/lib/auth/get-session";
 import {
   getUserProfileByAuthId,
   upsertUserProfile,
@@ -9,27 +10,27 @@ import {
 
 export async function GET() {
   try {
-    const { data: session } = await auth.getSession();
-    if (!session?.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const authUserId = session.user.id;
+    const authUserId = sessionUser.id;
     let profile = await getUserProfileByAuthId(authUserId);
 
     // If profile does not exist yet, create an initial one with info from auth session
     if (!profile) {
       profile = await upsertUserProfile({
         auth_user_id: authUserId,
-        email: session.user.email || null,
-        name: session.user.name || null,
+        email: sessionUser.email || null,
+        name: sessionUser.name || null,
       });
     }
 
     const preferences = profile ? await getUserPreferences(profile.id) : null;
 
     return NextResponse.json({
-      user: session.user,
+      user: { id: sessionUser.id, email: sessionUser.email, name: sessionUser.name },
       profile,
       preferences,
     });
@@ -44,12 +45,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { data: session } = await auth.getSession();
-    if (!session?.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const authUserId = session.user.id;
+    const authUserId = sessionUser.id;
     const body = await request.json();
 
     const {
@@ -58,6 +59,7 @@ export async function POST(request: Request) {
       phone,
       age,
       gender,
+      language,
       interests,
       information_purpose,
       information_style,
@@ -66,11 +68,12 @@ export async function POST(request: Request) {
 
     const profile = await upsertUserProfile({
       auth_user_id: authUserId,
-      name: name ?? session.user.name,
-      email: email ?? session.user.email,
+      name: name ?? sessionUser.name,
+      email: email ?? sessionUser.email,
       phone,
       age: age ? Number(age) : null,
       gender,
+      language,
     });
 
     let preferences = null;

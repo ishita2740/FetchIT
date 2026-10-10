@@ -65,7 +65,9 @@ export const DiscoveredSourceSchema = z.object({
   ]).describe("The category of the source"),
   relevance: z.string().describe("Why this source is highly relevant to the query"),
   reason: z.string().describe("Reasoning for selecting this specific source URL"),
-  status: z.enum(["discovered", "verified", "inaccessible", "rejected"]).default("discovered")
+  status: z.enum(["discovered", "verified", "inaccessible", "rejected"]).default("discovered"),
+  provider: z.string().optional().describe("Discovery engine used (e.g. SerpApi Google Search, Tavily Search)"),
+  snippet: z.string().optional().describe("Direct excerpt/snippet provided by the search engine"),
 });
 
 export type DiscoveredSource = z.infer<typeof DiscoveredSourceSchema>;

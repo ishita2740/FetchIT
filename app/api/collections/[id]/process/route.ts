@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
+import { getSessionUser } from "@/lib/auth/get-session";
 import {
   getUserProfileByAuthId,
   getCollectionById,
@@ -189,12 +190,12 @@ export async function POST(
 
   try {
     // 1. Authenticate
-    const { data: session } = await auth.getSession();
-    if (!session?.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const profile = await getUserProfileByAuthId(session.user.id);
+    const profile = await getUserProfileByAuthId(sessionUser.id);
     if (!profile) {
       return NextResponse.json(
         { error: "User profile not found" },
@@ -398,14 +399,37 @@ export async function POST(
         (p.validation === "valid" || p.validation === "incomplete")
     );
 
-    // Build the final result data
-    const finalData = finalRecords.map((p) => ({
-      ...p.cleaned_data,
-      _source_url: p.original.source_url,
-      _source_name: p.original.source_name,
-      _source_id: p.original.source_id,
-      _validation: p.validation,
-    }));
+    // Build the final result data with source-backed verification provenance
+    const finalData = finalRecords.map((p) => {
+      const recordData = { ...p.cleaned_data };
+      const rawEvidence = p.original.record_data?._evidence || recordData._evidence || null;
+      delete recordData._evidence;
+
+      const hasUrl = Boolean(p.original.source_url && p.original.source_url.startsWith("http"));
+      const isComplete = p.validation === "valid";
+
+      let verificationStatus: "source_supported" | "extracted" | "incomplete" | "unverified" = "extracted";
+      if (hasUrl && rawEvidence) {
+        verificationStatus = isComplete ? "source_supported" : "incomplete";
+      } else if (!hasUrl) {
+        verificationStatus = "unverified";
+      } else if (!isComplete) {
+        verificationStatus = "incomplete";
+      }
+
+      return {
+        ...recordData,
+        _source_url: p.original.source_url,
+        _source_name: p.original.source_name,
+        _source_id: p.original.source_id,
+        _validation: p.validation,
+        _verification_status: verificationStatus,
+        _evidence: rawEvidence,
+        _collected_at: p.original.collected_at,
+      };
+    });
+
+    const sourceSupportedCount = finalData.filter(r => r._verification_status === "source_supported").length;
 
     // Processing summary
     const processingSummary = {
@@ -415,6 +439,7 @@ export async function POST(
       valid: validCount,
       incomplete: incompleteCount,
       invalid: invalidCount,
+      source_supported: sourceSupportedCount,
       duplicates_removed: duplicateCount,
       duplicate_examples: duplicateExamples,
       final_count: finalRecords.length,
@@ -425,7 +450,7 @@ export async function POST(
       collection_id: collection.id,
       understood_requirement:
         requirement.understood_requirement || collection.original_input,
-      processing_summary: `Processed ${collectedRecords.length} raw records → ${cleanedCount} cleaned → ${validCount} valid, ${incompleteCount} incomplete → ${duplicateCount} duplicates removed → ${finalRecords.length} final records.`,
+      processing_summary: `Processed ${collectedRecords.length} raw records → ${cleanedCount} cleaned → ${validCount} valid (${sourceSupportedCount} source-supported), ${incompleteCount} incomplete → ${duplicateCount} duplicates removed → ${finalRecords.length} final records.`,
       result_data: {
         records: finalData,
         summary: processingSummary,

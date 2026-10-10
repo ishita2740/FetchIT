@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth/server";
 import { getUserProfileByAuthId, getUserCollections, createCollection } from "@/lib/db";
+import { getSessionUser } from "@/lib/auth/get-session";
 
 export async function GET() {
   try {
-    const { data: session } = await auth.getSession();
-    if (!session?.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const profile = await getUserProfileByAuthId(session.user.id);
+    const profile = await getUserProfileByAuthId(sessionUser.id);
     if (!profile) {
       return NextResponse.json({ collections: [] });
     }
@@ -24,14 +25,19 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { data: session } = await auth.getSession();
-    if (!session?.user) {
+    const sessionUser = await getSessionUser();
+    if (!sessionUser) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const profile = await getUserProfileByAuthId(session.user.id);
+    let profile = await getUserProfileByAuthId(sessionUser.id);
     if (!profile) {
-      return NextResponse.json({ error: "Profile not found" }, { status: 404 });
+      const { upsertUserProfile } = await import("@/lib/db");
+      profile = await upsertUserProfile({
+        auth_user_id: sessionUser.id,
+        email: sessionUser.email || null,
+        name: sessionUser.name || null,
+      });
     }
 
     const body = await request.json();

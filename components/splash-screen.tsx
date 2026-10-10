@@ -83,17 +83,17 @@ export function SplashScreen() {
 
       if (cancelled) return
 
-      // Not authenticated: show normal splash → data screen → auth screen
+      // Not authenticated: show normal splash (4s) → data screen (3s) → auth screen
       console.log('[auth] Unauthenticated → starting splash sequence')
       setBootState('splash')
       const dataTransition = window.setTimeout(() => {
         if (!cancelled) setShowDataScreen(true)
-      }, 3000)
+      }, 4000)
       const authTransition = window.setTimeout(() => {
         if (!cancelled) {
           setBootState('auth')
         }
-      }, 6000)
+      }, 7000)
 
       return () => {
         window.clearTimeout(dataTransition)
